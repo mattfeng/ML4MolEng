@@ -2,7 +2,7 @@
 
 Materials and problem sets for Machine Learning for Molecular Engineering (Spring 2021) taught at MIT
 
-**Instructors**: prof. Connor Coley, prof. Ernest Fraenkel, and prof. Rafael Gomez-Bombarelli 
+**Instructors**: Prof. Connor Coley, Prof. Ernest Fraenkel, and Prof. Rafael Gomez-Bombarelli 
 
 **Teach Assistant**: Wujie Wang
 
@@ -46,7 +46,6 @@ Application of computer vision in molecular engineering. You will use deep-learn
 
 You will participate in two ML competitions:
 
-[predicting caner progression](https://github.com/wwang2/ML4MolEng/blob/master/psets/ps6/MLMOL_Spring_2021_ps6_bioE.pdf)
-
-[predicting solvation free energies](https://github.com/wwang2/ML4MolEng/blob/master/psets/ps6/MLMOL_Spring_2021_PS6_chem_mat.pdf)
+- Predicting cacner progression
+- Predicting solvation free energies
 
