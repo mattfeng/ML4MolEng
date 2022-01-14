@@ -2,3 +2,5 @@
 __MACOSX/
 
 **/*.ipynb_checkpoints
+
+*.swp
