@@ -103,8 +103,7 @@ def collate_graphs(batch):
         
     AtomicNum_batch = torch.cat(AtomicNum_batch)
     Edge_batch = torch.cat(Edge_batch, dim=1)
-    # should be sum
-    Natom_batch = sum(Natom_batch)
+    Natom_batch = Natom_batch
     y_batch = torch.cat(y_batch)
     
     return AtomicNum_batch, Edge_batch, Natom_batch, y_batch 
@@ -137,15 +136,13 @@ def scatter_add(src, index, dim_size, dim=-1, fill_value=0):
 
     return out.scatter_add_(dim, index, src)
 
-
-
 class GNN(nn.Module):
     """
     A GNN model.
     """
     def __init__(self, n_convs=3, n_embed=64):
         super(GNN, self).__init__()
-        
+
         self.atom_embed = nn.Embedding(100, n_embed)
         # Declare MLPs in a ModuleList
         self.convolutions = nn.ModuleList([ 
@@ -165,28 +162,30 @@ class GNN(nn.Module):
             nn.ReLU(),
             nn.Linear(n_embed, 1)
             )
-        
+
     def forward(self, AtomicNum, Edge, Natom):
-        ################ Code #################
-        
         # Parameterize embedding 
         h = self.atom_embed(AtomicNum) # shape=(Natom, n_embed)
-        
+
         for conv in self.convolutions:
             prod = h[Edge[0]] * h[Edge[1]]  # shape=(Nedge, n_embed)
             msgs = conv["message_mlp"](prod) # shape=(Nedge, n_embed)
             # send the messages to nodes, undirected graph
-            agg_msg = scatter_add(src=msgs, index=Edge[1], dim=0, dim_size=Natom) + \
-                      scatter_add(src=msgs, index=Edge[0], dim=0, dim_size=Natom)
-            
+            # sum(Natom) is needed because we collated the graph
+            agg_msg = scatter_add(src=msgs, index=Edge[1], dim=0, dim_size=sum(Natom)) + \
+                      scatter_add(src=msgs, index=Edge[0], dim=0, dim_size=sum(Natom))
             # transform the message using UpdateMLP, and add as residual connection
             h += conv["update_mlp"](agg_msg)
-        
-        output = self.readout(h)
-        summed_output = torch.sum(output, dim=0).squeeze()
-        
-        ################ Code #################
-        return summed_output
+
+        readout = self.readout(h)
+        # readout for each individual graph in the batch
+        readout_split = torch.split(readout, Natom)
+        output = torch.stack(
+            [split.sum(0) for split in readout_split],
+            dim=0
+            )
+
+        return output
 
 
 def permute_graph(z, a, perm):
@@ -254,8 +253,13 @@ def loop(model, optimizer, loader, epoch, evaluation=False, device="cpu"):
 
 
 if __name__ == "__main__":
+    import os
     import wandb
-    wandb.init(project="ml4moleng_ps4", entity="mattfeng")
+
+    DEBUG = int(os.environ.get("DEBUG", 1))
+
+    if not DEBUG:
+        wandb.init(project="ml4moleng_ps4", entity="mattfeng")
 
     # load data
     df = pd.read_csv("./data/qm9.csv", index_col=0)
@@ -334,10 +338,11 @@ if __name__ == "__main__":
         train_loss = loop(model, optimizer, train_loader, epoch, device=device)
         val_loss = loop(model, optimizer, val_loader, epoch, evaluation=True, device=device)
 
-        wandb.log({
-            "train_loss": train_loss,
-            "val_loss": val_loss
-            })
+        if not DEBUG:
+            wandb.log({
+                "train_loss": train_loss,
+                "val_loss": val_loss
+                })
 
         # save model
         if epoch % 20 == 0:
