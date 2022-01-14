@@ -8,20 +8,21 @@ from rdkit.Chem import Draw
 from rdkit.Chem.Draw import IPythonConsole
 import pandas as pd
 import sys
-import torch 
 from tqdm import tqdm
 
 import itertools
 from itertools import repeat
 
 from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
 
+import torch
 from torch import optim
 from torch.utils.data import DataLoader
 from torch import nn
 from torch.nn import ModuleDict
 
-from rdkit import RDLogger   
+from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*') # turn off RDKit warning message 
 
 def smiles2graph(smiles):
@@ -246,13 +247,16 @@ def loop(model, optimizer, loader, epoch, evaluation=False, device="cpu"):
 
         postfix = ["batch loss={:.3f}".format(loss.item()) , 
                    "avg. loss={:.3f}".format(np.array(batch_losses).mean())]
-        
+
         tqdm_data.set_postfix_str(" ".join(postfix))
-    
+
     return np.array(batch_losses).mean()
 
 
 if __name__ == "__main__":
+    import wandb
+    wandb.init(project="ml4moleng_ps4", entity="mattfeng")
+
     # load data
     df = pd.read_csv("./data/qm9.csv", index_col=0)
     df = shuffle(df).reset_index()
@@ -261,6 +265,9 @@ if __name__ == "__main__":
     edge_list = []
     y_list = []
     natom_list = []
+
+    # read and format data
+    print("[i] Read data")
 
     for row in df.itertuples():
         smiles = row.smiles
@@ -278,6 +285,8 @@ if __name__ == "__main__":
 
     data = list(zip(atomic_num_list, edge_list, natom_list, y_list))
 
+    # create data loaders
+    print("[i] Create dataloaders")
     data_train_val, data_test = train_test_split(
         data,
         test_size=0.8,
@@ -294,7 +303,7 @@ if __name__ == "__main__":
     graphs_val = GraphDataset(*list(zip(*data_val)))
     graphs_test = GraphDataset(*list(zip(*data_test)))
 
-    train_loader = DataLoader(graphs_train, batch_size=256, shuffle=False, collate_fn=collate_graphs)
+    train_loader = DataLoader(graphs_train, batch_size=256, shuffle=True, collate_fn=collate_graphs)
     val_loader = DataLoader(graphs_val, batch_size=256, shuffle=False, collate_fn=collate_graphs)
     test_loader = DataLoader(graphs_test, batch_size=256, shuffle=False, collate_fn=collate_graphs)
 
@@ -313,6 +322,8 @@ if __name__ == "__main__":
         natom_list.append(natom)
 
     # train
+    print("[i] Begin training")
+
     device = 0
     model = GNN(n_convs=4, n_embed=128).to(device)
 
@@ -322,6 +333,11 @@ if __name__ == "__main__":
     for epoch in range(500):
         train_loss = loop(model, optimizer, train_loader, epoch, device=device)
         val_loss = loop(model, optimizer, val_loader, epoch, evaluation=True, device=device)
+
+        wandb.log({
+            "train_loss": train_loss,
+            "val_loss": val_loss
+            })
 
         # save model
         if epoch % 20 == 0:
