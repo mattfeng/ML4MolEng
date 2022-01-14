@@ -28,18 +28,18 @@ RDLogger.DisableLog('rdApp.*') # turn off RDKit warning message
 def smiles2graph(smiles):
     """
     Transfrom smiles into a list nodes (atomic number)
-    
+
     Args:
         smiles (str): SMILES strings
-    
+
     Return:
         z(np.array), A (np.array): list of atomic numbers, adjacency matrix 
     """
-    
+
     mol = Chem.MolFromSmiles(smiles) # no hydrogen 
     z = np.array([atom.GetAtomicNum() for atom in mol.GetAtoms()])
     A = np.stack(Chem.GetAdjacencyMatrix(mol))
-    
+
     return z, A
 
 class GraphDataset(torch.utils.data.Dataset):
@@ -50,8 +50,8 @@ class GraphDataset(torch.utils.data.Dataset):
                  y_list):
         """
         Represents a dataset of molecular graphs.
-        
-        Args: 
+
+        Args:
             z_list (list of torch.LongTensor)
             a_list (list of torch.LongTensor)
             N_list (list of int)
@@ -192,28 +192,28 @@ def permute_graph(z, a, perm):
     """
     Permutes the order of nodes in a molecular graph.
 
-    Args: 
+    Args:
         z(np.array): atomic number array
-        a(np.array): edge index pairs 
+        a(np.array): edge index pairs
 
-    Return: 
-        (np.array, np.array): permuted atomic number, and edge list 
+    Return:
+        (np.array, np.array): permuted atomic number, and edge list
     """
-    
+
     z = np.array(z)
     perm = np.array(perm)
     assert len(perm) == len(z)
-    
+
     z_perm = z[perm]
     a_perm = np.zeros(a.shape).astype(int)
-    
+
     for i, edge in enumerate(a):
         for j in range(len(edge)):
             a_perm[i, j] = np.where(perm==edge[j])[0]
     return z_perm, a_perm
 
 
-def loop(model, optimizer, loader, epoch, evaluation=False, device="cpu"):
+def loop(model, optimizer, loader, epoch, evaluation=False, device="cpu", clip_norm=2):
     if evaluation:
         model.eval()
         mode = "eval"
@@ -240,6 +240,7 @@ def loop(model, optimizer, loader, epoch, evaluation=False, device="cpu"):
         if not evaluation:
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_norm)
             optimizer.step()
 
         batch_losses.append(loss.item())
@@ -261,6 +262,7 @@ if __name__ == "__main__":
         "n_convs": 8,
         "n_embed": 256,
         "lr": 1e-3,
+        "clip_norm": 2,
         }
 
     DEBUG = int(os.environ.get("DEBUG", 1))
@@ -342,8 +344,23 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=50, verbose=True)
 
     for epoch in range(500):
-        train_loss = loop(model, optimizer, train_loader, epoch, device=device)
-        val_loss = loop(model, optimizer, val_loader, epoch, evaluation=True, device=device)
+        train_loss = loop(
+            model,
+            optimizer,
+            train_loader,
+            epoch,
+            device=device,
+            clip_norm=params["clip_norm"]
+            )
+        val_loss = loop(
+            model,
+            optimizer,
+            val_loader,
+            epoch,
+            evaluation=True,
+            device=device,
+            clip_norm=params["clip_norm"]
+            )
 
         if not DEBUG:
             wandb.log({
