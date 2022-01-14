@@ -260,7 +260,7 @@ if __name__ == "__main__":
         "batch_size": 256,
         "n_convs": 8,
         "n_embed": 256,
-        "lr": 1e-4,
+        "lr": 1e-3,
         }
 
     DEBUG = int(os.environ.get("DEBUG", 1))
