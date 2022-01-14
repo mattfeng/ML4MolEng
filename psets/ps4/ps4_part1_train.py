@@ -183,7 +183,7 @@ class GNN(nn.Module):
         output = torch.stack(
             [split.sum(0) for split in readout_split],
             dim=0
-            )
+            ).squeeze()
 
         return output
 
@@ -221,22 +221,22 @@ def loop(model, optimizer, loader, epoch, evaluation=False, device="cpu"):
         model.train()
         mode = "train"
     batch_losses = []
-    
+
     # Define tqdm progress bar 
     tqdm_data = tqdm(loader, position=0, leave=True, desc="{} (epoch #{})".format(mode, epoch))
-    
+
     for data in tqdm_data:
         AtomicNumber, Edge, Natom, y = data 
         AtomicNumber = AtomicNumber.to(device)
         Edge = Edge.to(device)
         y = y.to(device)
-        
+
         # make predictions 
         pred = model(AtomicNumber, Edge, Natom)
-        
+
         # define loss 
-        loss = (pred - y).pow(2).mean()  
-        
+        loss = (pred - y).pow(2).mean()
+
         if not evaluation:
             optimizer.zero_grad()
             loss.backward()
@@ -256,10 +256,17 @@ if __name__ == "__main__":
     import os
     import wandb
 
+    params = {
+        "batch_size": 256,
+        "n_convs": 8,
+        "n_embed": 256,
+        "lr": 1e-4,
+        }
+
     DEBUG = int(os.environ.get("DEBUG", 1))
 
     if not DEBUG:
-        wandb.init(project="ml4moleng_ps4", entity="mattfeng")
+        wandb.init(project="ml4moleng_ps4", entity="mattfeng", config=params)
 
     # load data
     df = pd.read_csv("./data/qm9.csv", index_col=0)
@@ -293,7 +300,7 @@ if __name__ == "__main__":
     print("[i] Create dataloaders")
     data_train_val, data_test = train_test_split(
         data,
-        test_size=0.8,
+        test_size=0.2,
         shuffle=True,
         random_state=54321
         )
@@ -307,9 +314,9 @@ if __name__ == "__main__":
     graphs_val = GraphDataset(*list(zip(*data_val)))
     graphs_test = GraphDataset(*list(zip(*data_test)))
 
-    train_loader = DataLoader(graphs_train, batch_size=256, shuffle=True, collate_fn=collate_graphs)
-    val_loader = DataLoader(graphs_val, batch_size=256, shuffle=False, collate_fn=collate_graphs)
-    test_loader = DataLoader(graphs_test, batch_size=256, shuffle=False, collate_fn=collate_graphs)
+    train_loader = DataLoader(graphs_train, batch_size=params["batch_size"], shuffle=True, collate_fn=collate_graphs)
+    val_loader = DataLoader(graphs_val, batch_size=params["batch_size"], shuffle=False, collate_fn=collate_graphs)
+    test_loader = DataLoader(graphs_test, batch_size=params["batch_size"], shuffle=False, collate_fn=collate_graphs)
 
     for row in df.itertuples():
         smiles = row.smiles
@@ -329,9 +336,9 @@ if __name__ == "__main__":
     print("[i] Begin training")
 
     device = 0
-    model = GNN(n_convs=4, n_embed=128).to(device)
+    model = GNN(n_convs=params["n_convs"], n_embed=params["n_embed"]).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=params["lr"])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=50, verbose=True)
 
     for epoch in range(500):
